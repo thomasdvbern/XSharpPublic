@@ -54,46 +54,40 @@ BEGIN NAMESPACE XSharp.VFP.UI
 
         PUBLIC METHOD SysMetric(nScreenElement AS LONG) AS LONG
             SWITCH nScreenElement
-            CASE 1 // SYSMETRIC_SCREENWIDTH
-                LOCAL hDC := VfpWin32UI.GetDC(IntPtr.Zero) AS IntPtr
-                LOCAL nRes := VfpWin32UI.GetDeviceCaps(hDC, VfpWin32UI.DESKTOP_HORZRES) AS LONG
-                VfpWin32UI.ReleaseDC(IntPtr.Zero, hDC)
-                RETURN nRes
-            CASE 2 // SYSMETRIC_SCREENHEIGHT
-                LOCAL hDC := VfpWin32UI.GetDC(IntPtr.Zero) AS IntPtr
-                LOCAL nRes := VfpWin32UI.GetDeviceCaps(hDC, VfpWin32UI.DESKTOP_VERTRES) AS LONG
-                VfpWin32UI.ReleaseDC(IntPtr.Zero, hDC)
-                RETURN nRes
-            CASE 3; RETURN SystemInformation.MinimizedWindowSpacingSize.Width
-            CASE 4; RETURN SystemInformation.MinimizedWindowSpacingSize.Height
-            CASE 5; RETURN SystemInformation.VerticalScrollBarWidth
-            CASE 6; RETURN SystemInformation.VerticalScrollBarArrowHeight
-            CASE 7; RETURN SystemInformation.HorizontalScrollBarArrowWidth
-            CASE 8; RETURN SystemInformation.HorizontalScrollBarHeight
-            CASE 9; RETURN SystemInformation.CaptionHeight
-            CASE 10; RETURN SystemInformation.FixedFrameBorderSize.Width
-            CASE 11; RETURN SystemInformation.FixedFrameBorderSize.Height
-            CASE 12; RETURN SystemInformation.FrameBorderSize.Width
-            CASE 13; RETURN SystemInformation.FrameBorderSize.Height
-            CASE 14; RETURN SystemInformation.HorizontalScrollBarThumbWidth
-            CASE 15; RETURN SystemInformation.VerticalScrollBarWidth
-            CASE 16; RETURN SystemInformation.IconSize.Width
-            CASE 17; RETURN SystemInformation.IconSize.Height
-            CASE 18; RETURN 0
-            CASE 19; RETURN 0
-            CASE 20; RETURN SystemInformation.MenuHeight
-            CASE 21; RETURN SystemInformation.MaxWindowTrackSize.Width
-            CASE 22; RETURN SystemInformation.MaxWindowTrackSize.Height
-            CASE 23; RETURN SystemInformation.KanjiWindowHeight
-            CASE 24; RETURN SystemInformation.MinWindowTrackSize.Width
-            CASE 25; RETURN SystemInformation.MinWindowTrackSize.Height
-            CASE 26; RETURN SystemInformation.MinimumWindowSize.Width
-            CASE 27; RETURN SystemInformation.MinimumWindowSize.Height
-            CASE 30; RETURN iif(SystemInformation.MousePresent == TRUE,  1, 0)
-            CASE 31; RETURN iif(SystemInformation.DebugOS == TRUE , 1, 0)
-            CASE 32; RETURN iif(SystemInformation.MouseButtonsSwapped == TRUE, 1, 0)
-            CASE 33; RETURN SystemInformation.ToolWindowCaptionButtonSize.Width
-            CASE 34; RETURN SystemInformation.ToolWindowCaptionHeight
+            CASE 1;  RETURN VfpWin32UI.GetSystemMetrics(VfpWin32UI.SM_CXSCREEN)
+            CASE 2;  RETURN VfpWin32UI.GetSystemMetrics(VfpWin32UI.SM_CYSCREEN)
+            CASE 3;  RETURN SystemInformation.MinimizedWindowSpacingSize.Width
+            CASE 4;  RETURN SystemInformation.MinimizedWindowSpacingSize.Height
+            CASE 5;  RETURN VfpWin32UI.GetSystemMetrics(VfpWin32UI.SM_CXVSCROLL)
+            CASE 6;  RETURN VfpWin32UI.GetSystemMetrics(VfpWin32UI.SM_CYVSCROLL)
+            CASE 7;  RETURN VfpWin32UI.GetSystemMetrics(VfpWin32UI.SM_CXHSCROLL)
+            CASE 8;  RETURN VfpWin32UI.GetSystemMetrics(VfpWin32UI.SM_CYHSCROLL)
+            CASE 9;  RETURN VfpWin32UI.GetSystemMetrics(VfpWin32UI.SM_CYCAPTION)
+            CASE 10; RETURN VfpWin32UI.GetSystemMetrics(VfpWin32UI.SM_CXBORDER)
+            CASE 11; RETURN VfpWin32UI.GetSystemMetrics(VfpWin32UI.SM_CYBORDER)
+            CASE 12; RETURN VfpWin32UI.GetSystemMetrics(VfpWin32UI.SM_CXDLGFRAME)
+            CASE 13; RETURN VfpWin32UI.GetSystemMetrics(VfpWin32UI.SM_CYDLGFRAME)
+            CASE 14; RETURN VfpWin32UI.GetSystemMetrics(VfpWin32UI.SM_CXHTHUMB)
+            CASE 15; RETURN VfpWin32UI.GetSystemMetrics(VfpWin32UI.SM_CYVTHUMB)
+            CASE 16; RETURN VfpWin32UI.GetSystemMetrics(VfpWin32UI.SM_CXICON)
+            CASE 17; RETURN VfpWin32UI.GetSystemMetrics(VfpWin32UI.SM_CYICON)
+            CASE 18; RETURN VfpWin32UI.GetSystemMetrics(VfpWin32UI.SM_CXCURSOR)
+            CASE 19; RETURN VfpWin32UI.GetSystemMetrics(VfpWin32UI.SM_CYCURSOR)
+            CASE 20; RETURN VfpWin32UI.GetSystemMetrics(VfpWin32UI.SM_CYMENU)
+            CASE 21; RETURN VfpWin32UI.GetSystemMetrics(VfpWin32UI.SM_CXFULLSCREEN)
+            CASE 22; RETURN VfpWin32UI.GetSystemMetrics(VfpWin32UI.SM_CYFULLSCREEN)
+            CASE 23; RETURN VfpWin32UI.GetSystemMetrics(VfpWin32UI.SM_CYKANJIWINDOW)
+            CASE 24; RETURN VfpWin32UI.GetSystemMetrics(VfpWin32UI.SM_CXMINTRACK)
+            CASE 25; RETURN VfpWin32UI.GetSystemMetrics(VfpWin32UI.SM_CYMINTRACK)
+            CASE 26; RETURN VfpWin32UI.GetSystemMetrics(VfpWin32UI.SM_CXMIN)
+            CASE 27; RETURN VfpWin32UI.GetSystemMetrics(VfpWin32UI.SM_CYMIN)
+            CASE 28; RETURN VfpWin32UI.GetSystemMetrics(VfpWin32UI.SM_CXSIZE)
+            CASE 29; RETURN VfpWin32UI.GetSystemMetrics(VfpWin32UI.SM_CYSIZE)
+            CASE 30; RETURN IIF(VfpWin32UI.GetSystemMetrics(VfpWin32UI.SM_MOUSEPRESENT) != 0, 1, 0)
+            CASE 31; RETURN IIF(VfpWin32UI.GetSystemMetrics(VfpWin32UI.SM_DEBUG) != 0, 1, 0)
+            CASE 32; RETURN IIF(VfpWin32UI.GetSystemMetrics(VfpWin32UI.SM_SWAPBUTTON) != 0, 1, 0)
+            CASE 33; RETURN VfpWin32UI.GetSystemMetrics(VfpWin32UI.SM_CXSMSIZE)
+            CASE 34; RETURN VfpWin32UI.GetSystemMetrics(VfpWin32UI.SM_CYSMSIZE)
             END SWITCH
             RETURN 0
         END METHOD
@@ -275,6 +269,10 @@ BEGIN NAMESPACE XSharp.VFP.UI
             RETURN {}
         END METHOD
 
+        PUBLIC METHOD GetPrinter() AS STRING
+            RETURN VfpWin32UI.ShowPrintSetup(IntPtr.Zero)
+        END METHOD
+
         METHOD LoadPicture(cFileName AS STRING) AS OBJECT
             LOCAL oImage AS OBJECT
 
@@ -351,6 +349,32 @@ BEGIN NAMESPACE XSharp.VFP.UI
 
             RETURN ""
         END METHOD
+
+        PUBLIC METHOD PutFile(cCustomText AS STRING, cFileName AS STRING, cFileExtensions AS STRING) AS STRING
+            VAR oDlg := SaveFileDialog{}
+
+            IF !String.IsNullOrEmpty(cCustomText)
+                oDlg:Title := cCustomText
+            ENDIF
+
+            IF !String.IsNullOrEmpty(cFileName)
+                oDlg:FileName := cFileName
+            ENDIF
+
+            oDlg:Filter := SELF:ParsePutFileFilter(cFileExtensions)
+
+            VAR cDefExt := SELF:FirstExtension(cFileExtensions)
+            IF !String.IsNullOrEmpty(cDefExt)
+                oDlg:DefaultExt   := cDefExt
+                oDlg:AddExtension := TRUE
+            ENDIF
+
+            IF oDlg:ShowDialog() == DialogResult.OK
+                RETURN oDlg:FileName
+            ENDIF
+
+            RETURN ""
+        END METHOD
         #endregion
 
         #region Private Helper: Filter Parser
@@ -415,7 +439,138 @@ BEGIN NAMESPACE XSharp.VFP.UI
 
             RETURN sb:ToString()
         END METHOD
+
+        // Filter syntax of PUTFILE (just extensions, no descriptions):
+        //   ""        -> all files
+        //   "PRG"     -> just .prg
+        //   ";"       -> file with no extension
+        //   wilcards (*, ?) are allowed
+        PRIVATE METHOD ParsePutFileFilter(cExt AS STRING) AS STRING
+            IF String.IsNullOrEmpty(cExt)
+                RETURN "All Files (*.*)|*.*"
+            ENDIF
+
+            VAR aExts := cExt:Split(<CHAR>{c';', c'|'})
+            VAR cPatterns := ""
+            FOREACH cRaw AS STRING IN aExts
+                VAR cE  := cRaw:Trim()
+                VAR cPat := IIF(cE:Length == 0, "*.", "*." + cE)
+                cPatterns += IIF(cPatterns:Length > 0, ";", "") + cPat
+            NEXT
+
+            IF cPatterns:Length == 0
+                RETURN "All Files (*.*)|*.*"
+            ENDIF
+            RETURN "Files (" + cPatterns + ")|" + cPatterns
+        END METHOD
+
+        PRIVATE METHOD FirstExtension(cExt AS STRING) AS STRING
+            IF String.IsNullOrEmpty(cExt)
+                RETURN ""
+            ENDIF
+            VAR aExts := cExt:Split(<CHAR>{c';', c'|'})
+            FOREACH cRaw AS STRING IN aExts
+                VAR cE := cRaw:Trim()
+                IF cE:Length > 0 .AND. cE:IndexOfAny(<CHAR>{c'*', c'?'}) < 0
+                    RETURN cE
+                ENDIF
+            NEXT
+            RETURN ""
+        END METHOD
         #endregion
+
+        METHOD FontMetric(nAttribute AS LONG, cFontName AS USUAL, nFontSize AS USUAL, cFontStyle AS USUAL) AS LONG
+            LOCAL oFont AS Font
+            LOCAL hDC AS IntPtr
+            LOCAL hFont AS IntPtr
+            LOCAL hOldFont AS IntPtr
+            LOCAL tm AS VfpWin32UI.TEXTMETRIC
+            LOCAL nResult AS LONG
+
+            VAR cName := "Microsoft Sans Serif"
+            LOCAL nSize := (Real4) 8.25 as Single
+            VAR eStyle := FontStyle.Regular
+
+            IF IsString(cFontName) .AND. !String.IsNullOrEmpty(cFontName)
+                cName := (STRING)cFontName
+            ENDIF
+            IF IsNumeric(cFontName) .AND. (int)nFontSize > 0
+                nSize := (Single)(INT)nFontSize
+            ENDIF
+
+            IF IsString(cFontStyle)
+                VAR sStyle := ((STRING)cFontStyle):ToUpper()
+                IF sStyle:Contains("B") ; eStyle |= FontStyle.Bold ; ENDIF
+                IF sStyle:Contains("I") ; eStyle |= FontStyle.Italic ; ENDIF
+                IF sStyle:Contains("U") ; eStyle |= FontStyle.Underline ; ENDIF
+                IF sStyle:Contains("-") ; eStyle |= FontStyle.Strikeout ; ENDIF
+            ENDIF
+
+            TRY
+                oFont := Font{cName, nSize, eStyle, GraphicsUnit.Point}
+            CATCH
+                oFont := Font{"Microsoft Sans Serif", (Real4) 8.25, FontStyle.Regular, GraphicsUnit.Point}
+            END TRY
+
+            nResult := 0
+            hDC := IntPtr.Zero
+            hFont := IntPtr.Zero
+            hOldFont := IntPtr.Zero
+
+            TRY
+                hDC := VfpWin32UI.GetDC(IntPtr.Zero)
+                hFont := oFont:ToHfont()
+                hOldFont := VfpWin32UI.SelectObject(hDC, hFont)
+
+                IF VfpWin32UI.GetTextMetrics(hDC, OUT tm)
+                    SWITCH nAttribute
+                    CASE 1;  nResult := tm:tmHeight
+                    CASE 2;  nResult := tm:tmAscent
+                    CASE 3;  nResult := tm:tmDescent
+                    CASE 4;  nResult := tm:tmInternalLeading
+                    CASE 5;  nResult := tm:tmExternalLeading
+                    CASE 6;  nResult := tm:tmAveCharWidth
+                    CASE 7;  nResult := tm:tmMaxCharWidth
+                    CASE 8;  nResult := tm:tmWeight
+                    CASE 9;  nResult := IIF(tm:tmItalic != 0, 1, 0)
+                    CASE 10; nResult := IIF(tm:tmUnderlined != 0, 1, 0)
+                    CASE 11; nResult := IIF(tm:tmStruckOut != 0, 1, 0)
+                    CASE 12; nResult := (INT)tm:tmFirstChar
+                    CASE 13; nResult := (INT)tm:tmLastChar
+                    CASE 14; nResult := (INT)tm:tmDefaultChar
+                    CASE 15; nResult := (INT)tm:tmBreakChar
+                    CASE 16; nResult := (INT)tm:tmPitchAndFamily
+                    CASE 17; nResult := (INT)tm:tmCharSet
+                    CASE 18; nResult := tm:tmOverhang
+                    CASE 19; nResult := tm:tmDigitizedAspectX
+                    CASE 20; nResult := tm:tmDigitizedAspectY
+                    END SWITCH
+                ENDIF
+            FINALLY
+                IF hOldFont != IntPtr.Zero
+                    VfpWin32UI.SelectObject(hDC, hOldFont)
+                ENDIF
+                IF hFont != IntPtr.Zero
+                    VfpWin32UI.DeleteObject(hFont)
+                ENDIF
+                IF hDC != IntPtr.Zero
+                    VfpWin32UI.ReleaseDC(IntPtr.Zero, hDC)
+                ENDIF
+                IF oFont != NULL
+                    oFont:Dispose()
+                ENDIF
+            END TRY
+
+            return nResult
+        END METHOD
+
+        PUBLIC METHOD InputBox(cInputPrompt AS STRING, cDialogCaption AS STRING, cDefaultValue AS STRING, ;
+                               nTimeout AS LONG, cTimeoutValue AS STRING, cCancelValue AS STRING) AS STRING
+            BEGIN USING VAR oForm := InputBoxForm{cInputPrompt, cDialogCaption, cDefaultValue, nTimeout, cTimeoutValue, cCancelValue}
+                oForm:ShowDialog()
+                RETURN oForm:GetResult()
+            END USING
+        END METHOD
     END CLASS
 
 END NAMESPACE

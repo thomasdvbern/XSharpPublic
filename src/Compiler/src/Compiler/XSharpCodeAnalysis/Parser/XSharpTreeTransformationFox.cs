@@ -15,6 +15,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
 {
     using System.Diagnostics;
     using Microsoft.CodeAnalysis.Syntax.InternalSyntax;
+    using static LanguageService.CodeAnalysis.XSharp.SyntaxParser.XSharpParser;
 
     internal class XSharpTreeTransformationFox : XSharpTreeTransformationRT
     {
@@ -129,12 +130,38 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
             }
         }
 
-        public override void ExitAccessMember([NotNull] XP.AccessMemberContext context)
+        public override void EnterAccessMember([NotNull] AccessMemberContext context)
         {
-            if (context.Expr != null && context.Op.Type == XP.DOT)  // do not assume an area when no Expr (inside WITH Block)
+            // do not assume an area when no Expr (inside WITH Block)
+            if (context.Expr != null && context.Op.Type == XP.DOT
+                && context.Parent is not MethodCallContext
+                && (context.AreaName == "M" ||
+                    _options.HasOption(CompilerOption.FoxCursorSupport, context, PragmaOptions)))
             {
                 context.foxFlags |= XP.FoxFlags.MemberAccess;
+                if (context.Parent is not AccessMemberContext && CurrentMember != null)
+                {
+                    var cb = GetCodeBlock(context);
+                    var name = context.AreaName;
+                    if (cb != null && cb.HasParameter(name))
+                    {
+                        ; // do nothing
+                    }
+                    else
+                    {
+                        var fld = CurrentMember.Data.GetField(name);
+                        if (fld == null)
+                        {
+                            fld = CurrentMember.Data.AddField(name, "_UNKNOWN", context);
+                        }
+                    }
+                }
             }
+            base.EnterAccessMember(context);
+        }
+
+        public override void ExitAccessMember([NotNull] XP.AccessMemberContext context)
+        {
             base.ExitAccessMember(context);
             // FoxPro uses M. for Locals and memvars
             // We assume it is a local and then will later correct this inside Binder_Expressions.cs if we can't find the local
@@ -248,25 +275,132 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
             base.EnterKeywordsoft(context);
             if (CurrentMember != null && context.Start.Type == XSharpLexer.THISFORM)
             {
-                CurrentMember.Data.HasThisForm = true;
+                if (!_options.HasOption(CompilerOption.NoThisForm, context, PragmaOptions))
+                {
+                    CurrentMember.Data.HasThisForm = true;
+                }
+            }
+        }
+        public override void EnterLocalvar([NotNull] XP.LocalvarContext context)
+        {
+            base.EnterLocalvar(context);
+            // register the names of local variables as pseudo memvars because for FoxPro they are not really local
+            if (_options.HasOption(CompilerOption.FoxCursorSupport, context, PragmaOptions))
+            {
+                var name = context.Id.GetText();
+                AddLocalName(name, context);
+            }
+        }
+        public override void EnterImpliedvar([NotNull] XP.ImpliedvarContext context)
+        {
+            base.EnterImpliedvar(context);
+            // register the names of local variables as pseudo memvars because for FoxPro they are not really local
+            if (_options.HasOption(CompilerOption.FoxCursorSupport, context, PragmaOptions))
+            {
+                var name = context.Id.GetText();
+                AddLocalName(name, context);
             }
         }
 
+
+        public override void EnterCodeblockParamList([NotNull] CodeblockParamListContext context)
+        {
+            base.EnterCodeblockParamList(context);
+            if (_options.HasOption(CompilerOption.FoxCursorSupport, context, PragmaOptions))
+            {
+                // Register the parameters for the codeblock so we know their names later
+                var cb = GetCodeBlock(context);
+                if (cb != null)
+                {
+                    foreach (var id in context._Ids)
+                    {
+                        var name = id.GetText();
+                        cb.AddParameter(name);
+                    }
+                }
+            }
+        }
+
+        public override void EnterExplicitAnonymousFunctionParamList([NotNull] ExplicitAnonymousFunctionParamListContext context)
+        {
+            base.EnterExplicitAnonymousFunctionParamList(context);
+            if (_options.HasOption(CompilerOption.FoxCursorSupport, context, PragmaOptions))
+            {
+                // Register the parameters for the codeblock so we know their names later
+                var cb = GetCodeBlock(context);
+                if (cb != null)
+                {
+                    foreach (var par in context._Params)
+                    {
+                        var name = par.Id.GetText();
+                        cb.AddParameter(name);
+                    }
+                }
+            }
+        }
         public override void ExitNameExpression([NotNull] XP.NameExpressionContext context)
         {
             base.ExitNameExpression(context);
-            if (context.Start.Type == XP.THISFORM)
+            string name = context.Name.GetText();
+            ExpressionSyntax expr = context.Name.Get<NameSyntax>();
+            // Check to see if the name is a field or Memvar, registered with the FIELD or MemVar statement
+            if (!_options.HasOption(CompilerOption.NoThisForm, context, PragmaOptions)
+                && context.Start.Type == XP.THISFORM)
             {
                 // Translate to Xs$ThisForm
                 if (CurrentMember != null && CurrentMember.Data.HasThisForm)
                 {
-                    var expr = GenerateSimpleName(XSharpSpecialNames.ThisForm);
+                    expr = GenerateSimpleName(XSharpSpecialNames.ThisForm);
                     context.Put(expr);
+                    return;
                 }
             }
+
+            if (context.IsInLambdaOrCodeBlock())
+            {
+                // Make sure parameters for codeblocks are not "touched"
+                var cb = GetCodeBlock(context);
+                if (cb != null && cb.HasParameter(name))
+                {
+                    expr = GenerateSimpleName(name);
+                    context.Put(expr);
+                    return;
+                }
+            }
+
+            // SomeVar(1,2) Can also be a FoxPro array access
+            if (context.Parent.Parent is not XP.MethodCallContext ||
+                (_options.HasOption(CompilerOption.FoxArraySupport, context, PragmaOptions)))
+            {
+                MemVarFieldInfo fieldInfo = findVar(name);
+                var amc = context.Parent.Parent as XP.AccessMemberContext;
+                var staticCall = amc?.Op.Type == XP.DOTCOLON;
+                var methodCall = amc?.Parent is MethodCallContext;
+                if (fieldInfo != null && !staticCall && !methodCall)
+                {
+                    // for code that looks like this we do not want to change the expression
+                    // Foo(1,2)
+                    // even when Foo is a private because this can never be a assignment
+                    if (!fieldInfo.IsField)
+                    {
+                        if (context.Parent is XP.PrimaryExpressionContext pec &&
+                            pec.Parent is XP.MethodCallContext mcc &&
+                            mcc.Parent is XP.ExpressionStmtContext)
+                        {
+                            fieldInfo = null;
+                        }
+                    }
+                    if (fieldInfo != null)
+                    {
+                        expr = MakeMemVarField(fieldInfo);
+                    }
+                }
+            }
+            context.Put(expr);
         }
-        protected override void ImplementThisForm(XP.IMemberWithBodyContext context, SyntaxListBuilder<StatementSyntax> stmts)
+        protected override void ImplementSpecialLocals(XP.IMemberWithBodyContext context, SyntaxListBuilder<StatementSyntax> stmts)
         {
+            base.ImplementSpecialLocals(context, stmts);
             if (context.Data.HasThisForm)
             {
                 // Add local Xs$ThisForm and assign the result of FindForm()
@@ -293,7 +427,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
 
         /*
                             // This includes array indices and optional type per name
-        foxmemvardecl       :  T=( MEMVAR |PARAMETERS | PRIVATE | PUBLIC ) FoxVars+=foxmemvar[$T]  (COMMA FoxVars+=foxmemvar[$T])*  end=eos 
+        foxmemvardecl       :  T=( MEMVAR |PARAMETERS | PRIVATE | PUBLIC ) FoxVars+=foxmemvar[$T]  (COMMA FoxVars+=foxmemvar[$T])*  end=eos
                     ;
 
                              // For the variable list for Private and Public
@@ -339,7 +473,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
                     {
                         // declare the private.
                         var varname = GetAmpBasedName(memvar.Amp, memvar.Id.Id);
-                        var exp = GenerateMemVarDecl(memvar, varname, true);
+                        var exp = GenerateMemVarDecl(memvar, varname, context.T.Type == XP.PRIVATE);
                         exp.XNode = memvar;
                         stmts.Add(GenerateExpressionStatement(exp, memvar));
                         ExpressionSyntax initializer = null;
@@ -964,7 +1098,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
             context.Put(m);
             if (context.TypeData.Partial)
             {
-                GlobalEntities.NeedsProcessing = true;
+                GlobalEntities.HasPartialType = true;
             }
         }
 
@@ -1123,6 +1257,29 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
                     ctor = _syntaxFactory.ConstructorDeclaration(attributeLists, mods, id, initparams, chain, body, null, null);
                     ctor.XGenerated = true;
                 }
+            }
+            else
+            {
+                // Subclass without its own INIT: VFP calls the parent's INIT
+                // with all the arguments passed to CREATEOBJECT(). Generate a
+                // Clipper-calling-convention constructor that forwards
+                // _ClipperArgs to the base class constructor, so the parent
+                // INIT receives the arguments instead of getting NIL/empty.
+                ParameterListSyntax pars = GetClipperParameters();
+                var arg = MakeArgument(GenerateSimpleName(XSharpSpecialNames.ClipperArgs));
+                ArgumentListSyntax args = MakeArgumentList(arg);
+                var chain = _syntaxFactory.ConstructorInitializer(SyntaxKind.BaseConstructorInitializer,
+                                                                    SyntaxFactory.ColonToken,
+                                                                    SyntaxFactory.MakeToken(SyntaxKind.BaseKeyword),
+                                                                    args
+                                                                    );
+                var mods = TokenList(SyntaxKind.PublicKeyword);
+                var id = context.Id.Get<SyntaxToken>();
+                GenerateAttributeList(attributeLists, SystemQualifiedNames.CompilerGenerated);
+                attributeLists.Add(MakeClipperCallingConventionAttribute(new List<ExpressionSyntax>()));
+                var body = MakeBlock(stmts);
+                ctor = _syntaxFactory.ConstructorDeclaration(attributeLists, mods, id, pars, chain, body, null, null);
+                ctor.XGenerated = true;
             }
             _pool.Free(attributeLists);
             return ctor;

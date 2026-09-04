@@ -20,6 +20,7 @@ INTERNAL CLASS XSharp.MemVarLevel
     INTERNAL PROPERTY Locals         AS ConcurrentDictionary<STRING, USUAL>   AUTO
     INTERNAL PROPERTY Depth          AS INT     AUTO GET PRIVATE SET
     INTERNAL PROPERTY SystemLevel    AS LOGIC   AUTO GET PRIVATE SET
+    PRIVATE PROPERTY DataSession    AS XSharp.RDD.DataSession AUTO
 #ifdef DEBUG
     INTERNAL PROPERTY Stack          AS STRING  AUTO
 #endif
@@ -32,7 +33,8 @@ INTERNAL CLASS XSharp.MemVarLevel
         SystemLevel := lSystem
 #ifdef DEBUG
         Stack       := System.Diagnostics.StackTrace{2,TRUE}:ToString()
-#endif
+        #endif
+        DataSession := NULL
         RETURN
 
     INTERNAL METHOD Add(variable AS XSharp.MemVar) AS VOID
@@ -64,6 +66,17 @@ INTERNAL CLASS XSharp.MemVarLevel
         Variables:Clear()
 
     INTERNAL PROPERTY Count AS INT GET Variables:Count
+
+    INTERNAL METHOD SetDataSession(oNewSession as XSharp.RDD.DataSession) AS VOID
+        SELF:DataSession := XSharp.RuntimeState.SetDataSession(oNewSession)
+        RETURN
+
+    INTERNAL METHOD RestoreDataSession() AS VOID
+        IF SELF:DataSession != NULL
+            XSharp.RuntimeState.SetDataSession(SELF:DataSession)
+            SELF:DataSession := NULL
+        ENDIF
+        RETURN
 
 #region Locals support
         // Set value for local and mark as 'updated'
@@ -233,6 +246,14 @@ PRIVATE STATIC ThreadList := ThreadLocal< MemVarThreadInfo >{ {=> MemVarThreadIn
         IsSystem := lFromSystem
         RETURN Depth
 
+    STATIC INTERNAL METHOD InitPrivates(oOwner as OBJECT) AS INT
+        var result := InitPrivates(FALSE)
+        if oOwner is IDataSession var oSession
+            var currentLevel := CheckCurrent()
+            currentLevel:SetDataSession(oSession:DataSession)
+        ENDIF
+        return result
+
     /// <exclude />
     STATIC PRIVATE METHOD CheckCurrent() AS MemVarLevel
         IF MemVarLevels:Count() == 0 .OR. MemVarLevels:Peek():Depth < Depth
@@ -243,6 +264,8 @@ PRIVATE STATIC ThreadList := ThreadLocal< MemVarThreadInfo >{ {=> MemVarThreadIn
 
     /// <include file="XSharp.RT.Docs.xml" path="doc/MemVar.ReleasePrivates/*" />
     STATIC METHOD ReleasePrivates(nLevel AS INT) AS LOGIC
+        var current := CheckCurrent()
+        current:RestoreDataSession()
         DO WHILE MemVarLevels:Count > 0 .AND. MemVarLevels:Peek():Depth >= nLevel
             MemVarLevels:Pop()
         ENDDO
@@ -518,9 +541,13 @@ PRIVATE STATIC ThreadList := ThreadLocal< MemVarThreadInfo >{ {=> MemVarThreadIn
         IF oMemVar != NULL
             RETURN oMemVar:Value
         ENDIF
-        VAR err := Error.VOError(EG_NOVAR,"MemVarGet",nameof(cName),1, <OBJECT>{cName})
+        // VAR err := Error.VOError(EG_NOVAR,"MemVarGet",nameof(cName),1, <OBJECT>{cName})
+        // THROW err
+        VAR err := Error{EG_NOVAR, nameof(cName), ErrString(EG_NOVAR) + ": " + cName}
+        err:FuncSym := "MemVarGet"
+        err:ArgNum := 1
+        err:Args := <OBJECT>{cName}
         THROW err
-
     /// <inheritdoc cref="M:XSharp.MemVar._Put(System.String,XSharp.__Usual)"/>
     STATIC PUBLIC Put AS Putter
     /// <include file="XSharp.RT.Docs.xml" path="doc/MemVar._Put/*" />

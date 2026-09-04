@@ -6,7 +6,7 @@
 #nullable disable
 
 using InternalSyntax = Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax;
-
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using System.Linq;
 using System.Collections.Generic;
@@ -377,6 +377,7 @@ namespace LanguageService.CodeAnalysis.XSharp.SyntaxParser
             HasExplicitOverride = 1 << 22,
             IsProperty = 1 << 23,
             HasThisForm = 1 << 24,
+            HasThisInCodeBlock = 1 << 25,
         }
         #endregion
 
@@ -553,6 +554,11 @@ namespace LanguageService.CodeAnalysis.XSharp.SyntaxParser
             {
                 get { return flags.HasFlag(MemberFlags.HasThisForm); }
                 set { setFlags(MemberFlags.HasThisForm, value); }
+            }
+            public bool HasThisInCodeBlock
+            {
+                get { return flags.HasFlag(MemberFlags.HasThisInCodeBlock); }
+                set { setFlags(MemberFlags.HasThisInCodeBlock, value); }
             }
 
             #endregion
@@ -1236,6 +1242,24 @@ namespace LanguageService.CodeAnalysis.XSharp.SyntaxParser
             None = 0,
             MemberAccess = 1,
             MPrefix = 2,
+            ThisPrefix = 4,
+
+        }
+
+        public partial class CodeblockContext
+        {
+            internal HashSet<string> parameters;
+            internal void AddParameter(string name)
+            {
+                if (parameters == null)
+                    parameters = new HashSet<string>(XSharpString.Comparer);
+                if (!parameters.Contains(name))
+                    parameters.Add(name);
+            }
+            internal bool HasParameter(string name)
+            {
+                return parameters != null && parameters.Contains(name);
+            }
         }
         public partial class AccessMemberContext
         {
@@ -1244,6 +1268,9 @@ namespace LanguageService.CodeAnalysis.XSharp.SyntaxParser
             internal bool HasMPrefix => foxFlags.HasFlag(FoxFlags.MPrefix);
             internal string AreaName => Expr == null ? "" : Expr.GetText().ToUpper();
             internal string FieldName => Name.GetText().ToUpper();
+            internal bool HasThisReference => Op.Type == XSharpLexer.DOT && Expr != null &&
+                (AreaName == "SELF" || AreaName == "THIS");
+
         }
         #region Ruleš with multiple vars or multiple expressions The Count determines how breakpoints are set
 
@@ -1455,8 +1482,8 @@ namespace LanguageService.CodeAnalysis.XSharp.SyntaxParser
             ClipperParameter,
             MacroMemvar,
             Local,
+            Unknown
         }
-        public bool IsMemvar => _fieldType == MemvarType.Memvar;
         public bool IsField => _fieldType == MemvarType.Field;
         public bool IsClipperParameter => _fieldType == MemvarType.ClipperParameter;
         public bool IsMacroMemvar => _fieldType == MemvarType.MacroMemvar;
@@ -1494,39 +1521,40 @@ namespace LanguageService.CodeAnalysis.XSharp.SyntaxParser
         }
 
         private FieldFlags _flags;
-        static FieldFlags setFlag(FieldFlags oldFlag, FieldFlags newFlag, bool set)
+        private FieldFlags SetFlag(FieldFlags newFlag, bool set)
         {
             if (set)
-                oldFlag |= newFlag;
+                _flags |= newFlag;
             else
-                oldFlag &= ~newFlag;
-            return oldFlag;
+                _flags &= ~newFlag;
+            return _flags;
         }
         public bool IsFileWidePublic
         {
             get { return _flags.HasFlag(FieldFlags.IsFileWidePublic); }
-            set { _flags = setFlag(_flags, FieldFlags.IsFileWidePublic, value); }
+            set { SetFlag(FieldFlags.IsFileWidePublic, value); }
         }
         public bool IsParameter
         {
             get { return _flags.HasFlag(FieldFlags.IsParameter); }
-            set { _flags = setFlag(_flags, FieldFlags.IsParameter, value); }
+            set { SetFlag(FieldFlags.IsParameter, value); }
         }
         public bool IsWritten
         {
             get { return _flags.HasFlag(FieldFlags.IsWritten); }
-            set { _flags = setFlag(_flags, FieldFlags.IsWritten, value); }
+            set { SetFlag(FieldFlags.IsWritten, value); }
         }
         public bool IsCreated
         {
             get { return _flags.HasFlag(FieldFlags.IsCreated); }
-            set { _flags = setFlag(_flags, FieldFlags.IsCreated, value); }
+            set { SetFlag(FieldFlags.IsCreated, value); }
         }
         public bool IsPublic
         {
             get { return _flags.HasFlag(FieldFlags.IsPublic); }
-            set { _flags = setFlag(_flags, FieldFlags.IsPublic, value); }
+            set { SetFlag(FieldFlags.IsPublic, value); }
         }
+
         public XSharpParserRuleContext Context { get; private set; }
         internal MemVarFieldInfo(string name, string alias, XSharpParserRuleContext context, bool filewidepublic = false)
         {
@@ -1556,6 +1584,9 @@ namespace LanguageService.CodeAnalysis.XSharp.SyntaxParser
                     case "_FIELD":
                         Alias = XSharpSpecialNames.FieldPrefix;
                         _fieldType = MemvarType.Field;
+                        break;
+                    case "_UNKNOWN":
+                        _fieldType = MemvarType.Unknown;
                         break;
                     default:
                         switch (alias)

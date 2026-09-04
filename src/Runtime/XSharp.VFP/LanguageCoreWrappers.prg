@@ -53,7 +53,15 @@ FUNCTION Occurs(uSearch AS STRING, cTarget AS STRING) AS DWORD
 /// <include file="VfpRuntimeDocs.xml" path="Runtimefunctions/strtran/*" />
 [FoxProFunction("STRTRAN", FoxFunctionCategory.StringAndCharacter, FoxEngine.LanguageCore, FoxFunctionStatus.Full, FoxCriticality.High)];
 FUNCTION StrTran(uTarget, uSearch, uReplace, uStart, uCount) AS STRING CLIPPER
-    RETURN XSharp.RT.Functions.StrTran(uTarget, uSearch, uReplace, uStart, uCount)
+    switch PCount()
+    case 3
+        RETURN XSharp.RT.Functions.StrTran(uTarget, uSearch, uReplace)
+    case 4
+        RETURN XSharp.RT.Functions.StrTran(uTarget, uSearch, uReplace, uStart)
+    case 5
+        RETURN XSharp.RT.Functions.StrTran(uTarget, uSearch, uReplace, uStart, uCount)
+    end switch
+    RETURN XSharp.RT.Functions.StrTran(uTarget, uSearch, uReplace)
 
 /// <include file="VfpRuntimeDocs.xml" path="Runtimefunctions/val/*" />
 [FoxProFunction("VAL", FoxFunctionCategory.MathAndNumeric, FoxEngine.LanguageCore, FoxFunctionStatus.Full, FoxCriticality.High)];
@@ -415,19 +423,6 @@ FUNCTION AScan(aTarget AS ARRAY, uSearch IN USUAL) AS DWORD
 FUNCTION ASort(aTarget AS ARRAY, nStart := NIL AS USUAL, nCount := NIL AS USUAL, cbOrder := NIL AS USUAL) AS ARRAY
     RETURN XSharp.RT.Functions.ASort(aTarget, nStart, nCount, cbOrder)
 
-// ----------------------------------------------------------------------- //
-// TODO(irwin): functions pending to implement
-// ----------------------------------------------------------------------- //
-/// <include file="VfpRuntimeDocs.xml" path="Runtimefunctions/cast/*" />
-[FoxProFunction("CAST", FoxFunctionCategory.General, FoxEngine.LanguageCore, FoxFunctionStatus.Stub, FoxCriticality.High)];
-FUNCTION Cast(eExpression IN USUAL, cType AS STRING) AS USUAL
-    THROW NotImplementedException{}
-
-/// <include file="VfpRuntimeDocs.xml" path="Runtimefunctions/dodefault/*" />
-[FoxProFunction("DODEFAULT", FoxFunctionCategory.ClassAndObject, FoxEngine.LanguageCore, FoxFunctionStatus.Stub, FoxCriticality.High)];
-FUNCTION DoDefault(eArgs AS USUAL[]) AS USUAL
-    THROW NotImplementedException{}
-
 /// <include file="VfpRuntimeDocs.xml" path="Runtimefunctions/iif/*" />
 // [FoxProFunction("IIF", FoxFunctionCategory.General, FoxEngine.LanguageCore, FoxFunctionStatus.Stub, FoxCriticality.High)];
 // FUNCTION Iif(cond AS LOGIC, trueExpr AS USUAL, falseExpr AS USUAL) AS USUAL
@@ -478,7 +473,3 @@ FUNCTION ObjNum(ObjectName AS STRING) AS INT
 FUNCTION ObjVar(ObjectName AS STRING) AS STRING
     THROW NotImplementedException{}
 
-/// <include file="VfpRuntimeDocs.xml" path="Runtimefunctions/pcount/*" />
-// [FoxProFunction("PCOUNT", FoxFunctionCategory.General, FoxEngine.LanguageCore, FoxFunctionStatus.Stub, FoxCriticality.High)];
-// FUNCTION Pcount() AS INT
-    // THROW NotImplementedException{}

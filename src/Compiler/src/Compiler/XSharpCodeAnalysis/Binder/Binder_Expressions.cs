@@ -668,6 +668,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                     bool isObject = leftType.IsObjectType() && !isSuper;
                     bool isUsual = false;
                     bool isArray = false;
+                    bool isFox3 = false;
                     NamedTypeSymbol usualType = Compilation.UsualType();
                     NamedTypeSymbol arrayType = Compilation.ArrayType();
                     if (!isObject)
@@ -676,10 +677,13 @@ namespace Microsoft.CodeAnalysis.CSharp
                         {
                             isUsual = nts.ConstructedFrom.IsUsualType();
                             isArray = nts.ConstructedFrom.IsArrayType();
+                            if (node.Parent is not InvocationExpressionSyntax)
+                                isFox3 = (boundLeft is BoundLocal  || boundLeft is BoundParameter)
+                                    && Compilation.Options.HasOption(CompilerOption.FoxCursorSupport, node);
                         }
                     }
-                    // Late bound will only work for OBJECT or USUAL
-                    if (isObject || isUsual || isArray)
+                    // Late bound will only work for OBJECT or USUAL or for /fox3 also for typed locals
+                    if (isObject || isUsual || isArray || isFox3)
                     {
                         var returnType = Compilation.UsualType();
                         if (isArray)
@@ -774,7 +778,7 @@ namespace Microsoft.CodeAnalysis.CSharp
                         if (expr.Kind != BoundKind.BadExpression)
                         {
                             newDiag.Clear();
-                            foreach (var error in diagnostics.DiagnosticBag.AsEnumerable())
+                            foreach (var error in diagnostics.DiagnosticBag?.AsEnumerable())
                             {
                                 bool suppress = false;
                                 var loc = error.Location;

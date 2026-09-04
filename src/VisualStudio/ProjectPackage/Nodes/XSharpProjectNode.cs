@@ -639,7 +639,11 @@ namespace XSharp.Project
             if (IsCodeFile(include) && item.ItemName == "Compile")
                 newNode.OleServiceProvider.AddService(typeof(SVSMDCodeDomProvider),
                     new XSharpVSMDProvider(newNode), false);
-            if (newNode.FileType == XFileType.ManagedResource)
+            // Only clear the generator when there is one to clear. Assigning it unconditionally is not free:
+            // for an item that comes from a wildcard in an imported file (which is every .resx in an SDK
+            // project) the setter has to materialize an Update item, and that forces a complete MSBuild
+            // re-evaluation of the project - once per dependent .resx node.
+            if (newNode.FileType == XFileType.ManagedResource && !string.IsNullOrEmpty(newNode.Generator))
             {
                 newNode.Generator = null;
             }
@@ -1170,6 +1174,7 @@ namespace XSharp.Project
                     AddProjectProperty(XSharpProjectFileConstants.Allowdot, "true");
                     RemoveProjectProperty(XSharpProjectFileConstants.Fox1);
                     RemoveProjectProperty(XSharpProjectFileConstants.Fox2);
+                    RemoveProjectProperty(XSharpProjectFileConstants.Fox3);
                     RemoveProjectProperty(XSharpProjectFileConstants.Xpp1);
                     break;
                 case XDialect.FoxPro:
@@ -1178,6 +1183,8 @@ namespace XSharp.Project
                     AddProjectProperty(XSharpProjectFileConstants.Vo15, "true");
                     AddProjectProperty(XSharpProjectFileConstants.Vo9, "true");
                     AddProjectProperty(XSharpProjectFileConstants.Fox1, "true");
+                    AddProjectProperty(XSharpProjectFileConstants.Fox2, "true");
+                    AddProjectProperty(XSharpProjectFileConstants.Fox3, "true");
                     AddProjectProperty(XSharpProjectFileConstants.InitLocals, "true");
                     AddProjectProperty(XSharpProjectFileConstants.NamedArgs, "false");
                     RemoveProjectProperty(XSharpProjectFileConstants.Xpp1);
@@ -1188,6 +1195,7 @@ namespace XSharp.Project
                     AddProjectProperty(XSharpProjectFileConstants.Allowdot, "false");
                     RemoveProjectProperty(XSharpProjectFileConstants.Fox1);
                     RemoveProjectProperty(XSharpProjectFileConstants.Fox2);
+                    RemoveProjectProperty(XSharpProjectFileConstants.Fox3);
                     if (dialect != XDialect.XPP)
                     {
                         RemoveProjectProperty(XSharpProjectFileConstants.Xpp1);
@@ -1311,26 +1319,32 @@ namespace XSharp.Project
                 }
             }
         }
-        public override int AddProjectReference()
+        public virtual Guid[] GetReferencePages()
         {
-            ThreadHelper.ThrowIfNotOnUIThread("AddProjectReference");
+            return new[] {
+                          VSConstants.AssemblyReferenceProvider_Guid,
+                          VSConstants.ProjectReferenceProvider_Guid,
+                          VSConstants.ComReferenceProvider_Guid,
+                          VSConstants.FileReferenceProvider_Guid,
+                    };
+        }
+
+        public virtual int AddReference(Guid guidPage)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread("AddReference");
             var referenceManager = this.GetService(typeof(SVsReferenceManager)) as IVsReferenceManager;
             if (referenceManager != null)
             {
                 string title = $"Reference Manager - {this.Caption}";
-                var contextGuids = new[] {
-                          VSConstants.AssemblyReferenceProvider_Guid,
-                          VSConstants.ProjectReferenceProvider_Guid,
-                          //VSConstants.SharedProjectReferenceProvider_Guid,
-                          VSConstants.ComReferenceProvider_Guid,
-                          VSConstants.FileReferenceProvider_Guid,
-                    };
+                var contextGuids = GetReferencePages();
+                // VSConstants.SharedProjectReferenceProvider_Guid,
+
                 referenceManager.ShowReferenceManager(
                       VsReferenceManager,
                       title,
                       "VS.AddReference",
-                      contextGuids.First(),
-                      fForceShowDefaultProvider: false
+                      guidPage,
+                      fForceShowDefaultProvider: true
                       );
                 return VSConstants.S_OK;
             }
@@ -1338,8 +1352,32 @@ namespace XSharp.Project
             {
                 return VSConstants.E_NOINTERFACE;
             }
+
         }
-        IVsReferenceManagerUser VsReferenceManager => new ProjectNodeReferenceManager(this);
+
+        public virtual int AddAssemblyReference()
+        {
+            return AddReference(VSConstants.AssemblyReferenceProvider_Guid);
+        }
+
+        public override int AddProjectReference()
+        {
+            return AddReference(VSConstants.ProjectReferenceProvider_Guid);
+        }
+        public virtual int AddCOMReference()
+        {
+            return AddReference(VSConstants.ComReferenceProvider_Guid);
+        }
+        public virtual int AddFileReference()
+        {
+            return AddReference(VSConstants.FileReferenceProvider_Guid);
+        }
+        //public virtual int AddSharedReference()
+        //{
+        //    return AddReference(4);
+        //}
+
+        protected virtual IVsReferenceManagerUser VsReferenceManager => new ProjectNodeReferenceManager(this);
 
         internal void LoadPackageReferences()
         {
@@ -1456,16 +1494,19 @@ namespace XSharp.Project
                     var refnode = FindProject(completePath);
                     Guid refnodeGuid = Guid.Empty;
                     string refnodeName = child.Caption;
-                    if (refnode == null)
+                    if (refnode != null)
+                    {
+                        refnodeGuid = refnode.ProjectIDGuid;
+                    }
+                    else
                     {
                         // this must be a foreign project reference
                         var projectInfo = ProjectInfo.GetProjectInfo(completePath);
                         if (projectInfo == null)
                         {
-                            if (this.GetProjectGuid(completePath, out refnodeGuid))
+                            if (this.GetProjectGuid(completePath, out refnodeGuid) && refnodeGuid != Guid.Empty)
                             {
                                 projectInfo = new ProjectInfo(refnodeGuid, completePath);
-                                element.SetMetadata(ProjectFileConstants.Project, refnodeGuid.ToString("B").ToUpperInvariant());
                             }
                         }
                         else
@@ -1477,19 +1518,19 @@ namespace XSharp.Project
                     {
                         element.SetMetadata(ProjectFileConstants.Project, refnodeGuid.ToString("B").ToUpperInvariant());
                         element.SetMetadata(ProjectFileConstants.Name, refnodeName);
+                        sdkref.SaveProperties();
+                        // The node was created before the referenced project was available, so it has no
+                        // guid and no build dependency yet.
+                        sdkref.UpdateReferencedProjectGuid(refnodeGuid);
                     }
                     else
                     {
+                        Logger.Information($"Could not determine the guid of project {completePath}, referenced by {this.Caption}");
                         found = false;
                     }
-                    if (found)
-                    {
-                        sdkref.SaveProperties();
-                    }
                 }
-
-                HasIncompleteReferences = !found;
             }
+            HasIncompleteReferences = !found;
             this.SetProjectFileDirty(false);
             return found;
         }
@@ -1940,6 +1981,23 @@ namespace XSharp.Project
 
         #region IXSharpProject Interface
 
+        public void AddIntellisenseError(XError error)
+        {
+            if (_errorListManager != null)
+            {
+                _errorListManager.AddIntellisenseError(error);
+            }
+        }
+
+        public List<IXErrorPosition> GetIntellisenseErrors(string fileName)
+        {
+            if (_errorListManager != null)
+            {
+                return _errorListManager.GetIntellisenseErrors(fileName);
+            }
+            return new List<IXErrorPosition>();
+        }
+
         public string DisplayName => this.Caption;
 
 
@@ -2043,6 +2101,22 @@ namespace XSharp.Project
             }
             RefreshIncludeFiles();
         }
+
+        /// <summary>
+        /// Exposes RefreshReferences to code elsewhere in this assembly that isn't an
+        /// XSharpProjectNode subclass (e.g. ShadowDesignerBridge), for forcing a synchronous
+        /// re-read of the .rsp/reference list right after a build it just ran itself --
+        /// rather than trusting that the normal BuildEnded(true) -> RefreshReferences() path
+        /// (triggered by XSharpIDEBuildLogger's MSBuild logger callback) has already
+        /// completed by the time a synchronous EnvDTE BuildProject(...) call returns.
+        /// Confirmed via diagnostic logging that it sometimes hasn't: GetFilteredReferencePaths
+        /// read a stale, empty (framework-only) list immediately after EnsureBuilt reported
+        /// success, causing the unresolved-3rd-party-reference CodeDom corruption
+        /// (oControl1:Property := x collapsing to a bare oControl1 = x) intermittently.
+        /// Virtual dispatch through this wrapper still reaches the most-derived override
+        /// (e.g. XSharpSdkProjectNode.RefreshReferences), same as calling it directly would.
+        /// </summary>
+        internal List<string> ForceRefreshReferences() => RefreshReferences();
 
         protected virtual List<string> RefreshReferences()
         {
@@ -2418,7 +2492,6 @@ namespace XSharp.Project
                 xoptions.BuildCommandLine();
             }
         }
-        public virtual bool IsSdkProject => false;
         internal XParseOptions CachedOptions;
         public XParseOptions ParseOptions
         {
@@ -2542,14 +2615,14 @@ namespace XSharp.Project
                 File.WriteAllText(Url, changedSource);
                 ok = false;
             }
+            if (ok && this.IsSdkProject)
+            {
+                // do not touch SDK style projects !
+                return VSConstants.S_OK;
+            }
             StringWriter backup = new StringWriter();
             BuildProject.Save(backup);
             var str = backup.ToString();
-            // do not touch SDK style projects !
-            if (str.IndexOf("<Project Sdk=", StringComparison.OrdinalIgnoreCase) > 0)
-            {
-                return VSConstants.S_OK;
-            }
             var str2 = str.ReplaceEx(XSharpProjectFileConstants.AnyCPU, XSharpProjectFileConstants.AnyCPU, StringComparison.OrdinalIgnoreCase);
             if (str2 != str)
             {

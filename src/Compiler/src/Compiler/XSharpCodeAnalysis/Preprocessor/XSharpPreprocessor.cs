@@ -353,7 +353,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
             addMacro("__WINDRIVE__", XSharpLexer.STRING_CONST, XSharpSpecificCompilationOptions.WindowsDir?.Substring(0, 2));
             var options = new string[] { "__VO1__", "__VO2__", "__VO3__", "__VO4__", "__VO5__", "__VO6__", "__VO7__", "__VO8__", "__VO9__", "__VO10__",
                                         "__VO11__","__VO12__","__VO13__","__VO14__","__VO15__","__VO16__","__VO17__","__XPP1__", "__FOX1__","__FOX2__",
-                                        "__MEMVAR__","__UNDECLARED__"};
+                                        "__FOX3__","__MEMVAR__","__UNDECLARED__"};
             foreach (var option in options)
             {
                 _macroDefines.Add(option, (token) => new XSharpPPToken(_options.HasOption(option.Replace("_", ""), token, null) ? XSharpLexer.TRUE_CONST : XSharpLexer.FALSE_CONST, option, token));
@@ -752,6 +752,40 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
                 default:
                     if (_textProps != null && line.Count > 0)
                     {
+                        // check for LINE_CONT token followed by a WS token
+                        // and the text ENDTEXT
+                        // if that was found then split the line and send the line with ENDTEXT to ProcessLine again
+                        int endTextToken = -1;
+                        IList<XSharpToken> nextLine = null;
+                        for (int i = line.Count - 1; i > 0 ; i--)
+                        {
+                            if (line[i].Type == XSharpLexer.LINE_CONT)
+                            {
+                                // check tokens after i
+                                for (int j = i; j < line.Count && endTextToken == -1; j++)
+                                {
+                                    if (line[j].Type == XSharpLexer.ID)
+                                    {
+                                        if (string.Compare(line[j].Text, "ENDTEXT", true) == 0)
+                                        {
+                                            endTextToken = j;
+                                            line[j].Type = XSharpLexer.PP_ENDTEXT;
+                                            line[j].Channel = Channel.Default;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if (endTextToken != -1)
+                        {
+                            nextLine = new List<XSharpToken>();
+                            for (int j = endTextToken; j < line.Count; j++)
+                            {
+                                nextLine.Add(line[j]);
+                            }
+                            line = line.Take(endTextToken-1).ToList();
+                        }
                         var sb = new StringBuilder();
                         foreach (var token in line)
                         {
@@ -770,6 +804,11 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
                         else
                         {
                             line = doTextLine(line, write2ppo);
+                        }
+                        if (nextLine != null)
+                        {
+                            line.Add(new XSharpToken(XSharpLexer.EOS, "\r\n"));
+                            line.AddRange(doEndTextDirective(nextLine, write2ppo));
                         }
                     }
                     else
@@ -2305,6 +2344,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
                                     break;
                                 case CompilerOption.Fox1:    // Inherit from Base
                                 case CompilerOption.Fox2:    // FoxPro array syntax
+                                case CompilerOption.Fox3:    // Compatible Cursor Support
                                     if (_options.Dialect != XSharpDialect.FoxPro)
                                         goto default;
                                     pragma = new PragmaOption(start, state, compopt);

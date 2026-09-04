@@ -18,6 +18,7 @@ using XP = LanguageService.CodeAnalysis.XSharp.SyntaxParser.XSharpParser;
 namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
 {
     using Microsoft.CodeAnalysis.Syntax.InternalSyntax;
+    using static LanguageService.CodeAnalysis.XSharp.SyntaxParser.XSharpParser;
     using static Microsoft.CodeAnalysis.FlowAnalysis.ControlFlowGraphBuilder;
 
     internal class XSharpTreeTransformationRT : XSharpTreeTransformationCore
@@ -41,6 +42,38 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
         protected override XSharpTreeTransformationCore CreateWalker(XSharpParser parser)
         {
             return new XSharpTreeTransformationRT(parser, _options, _pool, _syntaxFactory, _fileName);
+        }
+
+        protected override void MergeParseResults(XSharpTreeTransformationCore subparser)
+        {
+            base.MergeParseResults(subparser);
+            if (subparser is XSharpTreeTransformationRT rt)
+            {
+                if (rt.LiteralSymbols.Count > 0)
+                {
+                    foreach (var sym in rt.LiteralSymbols)
+                    {
+                        if (!this.LiteralSymbols.ContainsKey(sym.Key))
+                        {
+                            this.LiteralSymbols.Add(sym.Key, sym.Value);
+                        }
+                    }
+                }
+                if (rt.LiteralPSZs.Count > 0)
+                {
+                    foreach (var psz in rt.LiteralPSZs)
+                    {
+                        if (!this.LiteralPSZs.ContainsKey(psz.Key))
+                        {
+                            this.LiteralPSZs.Add(psz.Key, psz.Value);
+                        }
+                    }
+                }
+                if (rt.GlobalEntities.HasPCall)
+                {
+                    this.GlobalEntities.HasPCall = true;
+                }
+            }
         }
         public XSharpTreeTransformationRT(XSharpParser parser, CSharpParseOptions options, SyntaxListPool pool,
             ContextAwareSyntax syntaxFactory, string fileName) :
@@ -261,7 +294,8 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
             foreach (var name in procnames)
             {
                 var invoke = GenerateMethodCall(name, true);
-                stmts.Add(GenerateExpressionStatement(invoke, null));
+                invoke.XGenerated = true;
+                stmts.Add(GenerateExpressionStatement(invoke, null, true));
             }
             if (filewidepublics != null)
             {
@@ -270,7 +304,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
                     var name = memvar.Name;
                     var exp = GenerateMemVarDecl(memvar.Context, GenerateLiteral(name), false);
                     exp.XNode = memvar.Context;
-                    stmts.Add(GenerateExpressionStatement(exp, memvar.Context));
+                    stmts.Add(GenerateExpressionStatement(exp, memvar.Context, true));
                     ExpressionSyntax initializer = null;
                     if (memvar.Context is XP.MemvarContext context)
                     {
@@ -301,9 +335,10 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
                     }
                     if (initializer != null)
                     {
+                        initializer.XGenerated = true;
                         exp = GenerateMemVarPut(memvar.Context, GenerateLiteral(name), initializer);
                         exp.XNode = memvar.Context;
-                        stmts.Add(GenerateExpressionStatement(exp, memvar.Context));
+                        stmts.Add(GenerateExpressionStatement(exp, memvar.Context, true));
                     }
                 }
             }
@@ -348,38 +383,38 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
             // Put Everything in separate methods $Init1 .. $Init3
             // Suppress generating $init1 when no methods are found and SuppressInit1 = true;
 
-            MethodDeclarationSyntax finit1 = CreateInitFunction(init1, XSharpSpecialNames.InitProc1, isApp);
-            MethodDeclarationSyntax finit2 = CreateInitFunction(init2, XSharpSpecialNames.InitProc2, isApp);
-            MethodDeclarationSyntax finit3 = CreateInitFunction(init3, XSharpSpecialNames.InitProc3, isApp, filewidepublics);
+            var finit1 = CreateInitFunction(init1, XSharpSpecialNames.InitProc1, isApp);
+            var finit2 = CreateInitFunction(init2, XSharpSpecialNames.InitProc2, isApp);
+            var finit3 = CreateInitFunction(init3, XSharpSpecialNames.InitProc3, isApp, filewidepublics);
 
             // Join all the statements and create a class constructor
             var stmts = _pool.Allocate<StatementSyntax>();
             if (finit1.Body.Statements.Count > 0 || !_options.SuppressInit1)
             {
+                stmts.Clear();
                 // $Init1 is generated always, unless the /noinit compiler option is used. This is compatible to Vulcan
                 stmts.AddRange(finit1.Body.Statements);
-                finit1 = finit1.Update(finit1.AttributeLists, finit1.Modifiers, finit1.ReturnType, finit1.ExplicitInterfaceSpecifier,
-                    finit1.Identifier, finit1.TypeParameterList, finit1.ParameterList, finit1.ConstraintClauses,
-                    MakeBlock(), finit1.ExpressionBody, finit1.SemicolonToken);
+                finit1 = finit1.UpdateBody(MakeBlock(stmts));
+                finit1.XGenerated = true;
                 members.Add(finit1);
 
             }
             if (finit2.Body.Statements.Count > 0)
             {
                 // $Init2 is only generated when there are methods. This is compatible to Vulcan
+                stmts.Clear();
                 stmts.AddRange(finit2.Body.Statements);
-                finit2 = finit2.Update(finit2.AttributeLists, finit2.Modifiers, finit2.ReturnType, finit2.ExplicitInterfaceSpecifier,
-                    finit2.Identifier, finit2.TypeParameterList, finit2.ParameterList, finit2.ConstraintClauses,
-                    MakeBlock(), finit1.ExpressionBody, finit1.SemicolonToken);
+                finit2 = finit2.UpdateBody(MakeBlock(stmts));
+                finit2.XGenerated = true;
                 members.Add(finit2);
             }
             if (finit3.Body.Statements.Count > 0)
             {
+                stmts.Clear();
                 // $Init3 is only generated when there are methods. This is compatible to Vulcan
                 stmts.AddRange(finit3.Body.Statements);
-                finit3 = finit3.Update(finit3.AttributeLists, finit3.Modifiers, finit3.ReturnType, finit3.ExplicitInterfaceSpecifier,
-                    finit3.Identifier, finit3.TypeParameterList, finit3.ParameterList, finit3.ConstraintClauses,
-                    MakeBlock(), finit3.ExpressionBody, finit3.SemicolonToken);
+                finit3 = finit3.UpdateBody(MakeBlock(stmts));
+                finit3.XGenerated = true;
                 members.Add(finit3);
             }
             // now create a class constructor with the initialization code
@@ -389,7 +424,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
                 identifier: SyntaxFactory.Identifier(GlobalClassName),
                 parameterList: EmptyParameterList(),
                 initializer: null,
-                body: MakeBlock(stmts),
+                body: MakeBlock(),
                 expressionBody: null,
                 semicolonToken: SyntaxFactory.SemicolonToken);
             members.Add(ctor);
@@ -586,7 +621,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
                 var methodcall = GenerateMethodCall(this._entryPoint, arguments, true);
                 if (isVoidType(returntype))
                 {
-                    stmts.Add(GenerateExpressionStatement(methodcall, context.Context()));
+                    stmts.Add(GenerateExpressionStatement(methodcall, context.Context(), true));
                 }
                 else
                 {
@@ -600,7 +635,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
                 var methodcall = GenerateMethodCall(this._entryPoint, EmptyArgumentList(), true);
                 if (isVoidType(returntype))
                 {
-                    stmts.Add(GenerateExpressionStatement(methodcall, context.Context()));
+                    stmts.Add(GenerateExpressionStatement(methodcall, context.Context(), true));
                 }
                 else
                 {
@@ -613,7 +648,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
             ExpressionSyntax call;
             stmts.Clear();
             call = GenerateMethodCall(XSharpSpecialNames.ModuleName + "." + XSharpSpecialNames.AppInit, true);
-            stmts.Add(GenerateExpressionStatement(call, context.Context()));
+            stmts.Add(GenerateExpressionStatement(call, context.Context(), true));
             stmts.Add(body);
             //var ame = _syntaxFactory.AnonymousMethodExpression(
             //    null,
@@ -729,6 +764,9 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
         #endregion
 
         #region Expression Statement
+
+
+
 
         protected override StatementSyntax HandleExpressionStmt(IList<XP.ExpressionContext> expressions)
         {
@@ -936,12 +974,11 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
             if (context.Parent.Parent is not XP.MethodCallContext ||
                 (_options.HasOption(CompilerOption.FoxArraySupport, context, PragmaOptions)))
             {
-                MemVarFieldInfo fieldInfo = findMemVar(Name);
-                if (fieldInfo != null)
+                MemVarFieldInfo fieldInfo = findVar(Name);
+                var amc = context.Parent.Parent as XP.AccessMemberContext;
+                var staticCall = amc?.Op.Type == XP.DOTCOLON;
+                if (fieldInfo != null && !staticCall)
                 {
-                    // for code that looks like this we do not want to change the expression
-                    // Foo(1,2)
-                    // even when Foo is a private because this can never be a assignment
                     if (!fieldInfo.IsField)
                     {
                         if (context.Parent is XP.PrimaryExpressionContext pec &&
@@ -1098,25 +1135,6 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
             }
         }
 
-        public override void EnterLocalvar([NotNull] XP.LocalvarContext context)
-        {
-            base.EnterLocalvar(context);
-            if (_options.SupportsMemvars)
-            {
-                var name = context.Id.GetText();
-                AddLocalName(name, context);
-            }
-        }
-
-        public override void EnterImpliedvar([NotNull] XP.ImpliedvarContext context)
-        {
-            base.EnterImpliedvar(context);
-            if (_options.SupportsMemvars)
-            {
-                var name = context.Id.GetText();
-                AddLocalName(name, context);
-            }
-        }
         protected MemVarFieldInfo addFieldOrMemvar(string name, string prefix,
             XSharpParserRuleContext context, IToken modifier)
         {
@@ -1673,7 +1691,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
                         classdecl.Keyword,
                         classdecl.Identifier,
                         classdecl.TypeParameterList,
-                        null, // TODO nvk
+                        classdecl.ParameterList,
                         classdecl.BaseList,
                         classdecl.ConstraintClauses,
                         classdecl.OpenBraceToken,
@@ -3234,7 +3252,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
             string name;
             if (expr is IdentifierNameSyntax ins)
             {
-                // Intrinsic functions that depend on Vulcan types
+                // Intrinsic functions that depend on X# types
                 name = ins.Identifier.Text.ToUpper();
                 switch (name)
                 {
@@ -3536,10 +3554,6 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
                 parameters = MakeParameterList(@params);
             }
         }
-        protected virtual void ImplementThisForm(XP.IMemberWithBodyContext context, SyntaxListBuilder<StatementSyntax> stmts)
-        {
-
-        }
         protected override void ImplementClipperAndPSZ(XP.IMemberWithBodyContext context,
             ref SyntaxList<AttributeListSyntax> attributes, ref ParameterListSyntax parameters, ref BlockSyntax body,
             ref TypeSyntax dataType)
@@ -3598,6 +3612,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
 
             if (context.Data.HasClipperCallingConvention || context.Data.UsesPSZ ||
                 context.Data.HasThisForm ||
+                context.Data.HasThisInCodeBlock ||
                 _options.HasOption(CompilerOption.MemVars, (XSharpParserRuleContext)context, PragmaOptions))
             {
                 var stmts = _pool.Allocate<StatementSyntax>();
@@ -3607,8 +3622,8 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
                     implementNoClipCall(context, ref parameters, ref dataType);
                     context.Data.HasClipperCallingConvention = false;
                 }
-                // If the code contains a THISFORM
-                ImplementThisForm(context, stmts);
+                // If the code contains a THISFORM or THIS in a codeblock
+                ImplementSpecialLocals(context, stmts);
                 if (context.Data.HasClipperCallingConvention && !_options.NoClipCall)
                 {
                     // Assuming the parameters are called oPar1 and oPar2 then the following code is generated

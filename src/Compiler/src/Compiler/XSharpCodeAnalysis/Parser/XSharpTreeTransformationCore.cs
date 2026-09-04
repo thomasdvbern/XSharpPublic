@@ -49,7 +49,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
             public List<PragmaOption> PragmaOptions;
 
             public bool HasPCall;
-            public bool NeedsProcessing;
+            public bool HasPartialType;
 
             internal SyntaxEntities(SyntaxListPool pool)
             {
@@ -65,7 +65,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
                 FileScopedNamespace = null;
                 _pool = pool;
                 HasPCall = false;
-                NeedsProcessing = false;
+                HasPartialType = false;
                 LastIsStatic = false;
                 LastMember = null;
                 PragmaWarnings = null;
@@ -1852,7 +1852,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
                         }
                         result = GeneratePartialProperyMethod(AssMet, false, bStatic);
                     }
-                    GlobalEntities.NeedsProcessing = true;
+                    GlobalEntities.HasPartialType = true;
                     return result;
                 }
             }
@@ -3042,7 +3042,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
             context.TypeData.Partial = mods.Any((int)SyntaxKind.PartialKeyword);
             if (context.TypeData.Partial)
             {
-                GlobalEntities.NeedsProcessing = true;
+                GlobalEntities.HasPartialType = true;
             }
             var members = GetMembers(context, context._Members);
             var baseTypes = GetBaseTypes(null, context._Parents);
@@ -3089,11 +3089,13 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
             context.TypeData.Partial = mods.Any((int)SyntaxKind.PartialKeyword);
             if (context.TypeData.Partial)
             {
-                GlobalEntities.NeedsProcessing = true;
+                GlobalEntities.HasPartialType = true;
             }
 
             var members = GetMembers(context, context._Members);
             var baseTypes = GetBaseTypes(context.BaseType?.Get<TypeSyntax>(), context._Implements);
+            ParameterListSyntax primeParam = null;
+            if (context.ParamList != null) primeParam = getParameters(context.ParamList);
 
             MemberDeclarationSyntax m;
             if (isRecord)
@@ -3106,7 +3108,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
                         classOrStructKeyword: SyntaxFactory.MakeToken(SyntaxKind.ClassKeyword),
                         identifier: context.Id.Get<SyntaxToken>(),
                         typeParameterList: getTypeParameters(context.TypeParameters),
-                        parameterList: null, // TODO nvk
+                        parameterList: primeParam,
                         baseList: _syntaxFactory.BaseList(SyntaxFactory.ColonToken, baseTypes),
                         constraintClauses: getTypeConstraints(context._ConstraintsClauses),
                         openBraceToken: SyntaxFactory.OpenBraceToken,
@@ -3122,7 +3124,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
                    keyword: SyntaxFactory.MakeToken(SyntaxKind.ClassKeyword),
                    identifier: context.Id.Get<SyntaxToken>(),
                    typeParameterList: getTypeParameters(context.TypeParameters),
-                   parameterList: null, // TODO nvk
+                   parameterList: primeParam,
                    baseList: _syntaxFactory.BaseList(SyntaxFactory.ColonToken, baseTypes),
                    constraintClauses: getTypeConstraints(context._ConstraintsClauses),
                    openBraceToken: SyntaxFactory.OpenBraceToken,
@@ -3205,10 +3207,12 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
 
             if (context.TypeData.Partial)
             {
-                GlobalEntities.NeedsProcessing = true;
+                GlobalEntities.HasPartialType = true;
             }
             var members = GetMembers(context, context._Members);
             var baseTypes = GetBaseTypes(null, context._Implements);
+            ParameterListSyntax primeParam = null;
+            if (context.ParamList != null) primeParam = getParameters(context.ParamList);
 
             MemberDeclarationSyntax m;
             if (isRecord)
@@ -3221,7 +3225,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
                         classOrStructKeyword: SyntaxFactory.MakeToken(SyntaxKind.StructKeyword),
                         identifier: context.Id.Get<SyntaxToken>(),
                         typeParameterList: getTypeParameters(context.TypeParameters),
-                        parameterList: null, // TODO nvk
+                        parameterList: primeParam,
                         baseList: _syntaxFactory.BaseList(SyntaxFactory.ColonToken, baseTypes),
                         constraintClauses: getTypeConstraints(context._ConstraintsClauses),
                         openBraceToken: SyntaxFactory.OpenBraceToken,
@@ -3237,7 +3241,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
                     keyword: SyntaxFactory.MakeToken(SyntaxKind.StructKeyword),
                     identifier: context.Id.Get<SyntaxToken>(),
                     typeParameterList: getTypeParameters(context.TypeParameters),
-                    parameterList: null, // TODO nvk
+                    parameterList: primeParam,
                     baseList: _syntaxFactory.BaseList(SyntaxFactory.ColonToken, baseTypes),
                     constraintClauses: getTypeConstraints(context._ConstraintsClauses),
                     openBraceToken: SyntaxFactory.OpenBraceToken,
@@ -4498,7 +4502,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
                         var vop = ce.VoProperties.Values.First();
                         var prop = GenerateVoProperty(vop, cls);
                         mem = prop;
-                        GlobalEntities.NeedsProcessing = true;
+                        GlobalEntities.HasPartialType = true;
                         m = GenerateClassWrapper(context.ClassId.Get<SyntaxToken>(), mem);
                         cls.Put(m);
                     }
@@ -5138,8 +5142,10 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
             foreach (var paramCtx in context._Params)
             {
                 var paramNode = paramCtx.Get<ParameterSyntax>();
+                bool isClipper = CurrentMember?.Data.HasClipperCallingConvention ?? false;
+                bool isProperty = CurrentMember?.Data.IsProperty ?? false;
                 if (paramCtx.Type == null && paramCtx.Ellipsis == null &&
-                    !CurrentMember.Data.HasClipperCallingConvention && !CurrentMember.Data.IsProperty)
+                    !isClipper && !isProperty)
                 {
                     var parType = "USUAL";
                     var dt = _getNextParameterDataType(paramCtx);
@@ -7629,21 +7635,53 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
 
         protected virtual XP.WithBlockContext FindWithBlock(XSharpParserRuleContext context)
         {
+            bool hasFoundStatementBlock = false;
             var parent = context.Parent;
-            while (parent != null && !(parent is XP.IEntityContext))
+            while (parent is not null && parent is not XP.IEntityContext)
             {
-                if (parent is XP.WithBlockContext wbc)
+                if (hasFoundStatementBlock)
                 {
-                    return wbc;
+                    if (parent is XP.WithBlockContext wbc)
+                    {
+                        return wbc;
+                    }
+                }
+                else if (parent is XP.StatementBlockContext)
+                {
+                    hasFoundStatementBlock = true;
                 }
                 parent = parent.Parent;
             }
             return null;
         }
 
+        protected XP.CodeblockContext GetCodeBlock(XSharpParserRuleContext context)
+        {
+            var parent = context.Parent;
+            while (parent != null && parent is not XP.IEntityContext)
+            {
+                if (parent is XP.CodeblockContext codeblock)
+                {
+                    return codeblock;
+                }
+                parent = parent.Parent;
+            }
+            return null;
+        }
+        public override void EnterAccessMember([NotNull] XP.AccessMemberContext context)
+        {
+            base.EnterAccessMember(context);
+            var cb = GetCodeBlock(context);
+            if (cb != null && context.HasThisReference)
+            {
+                // there is a self or this prefix in the codeblock
+                // we need to create a special variable for this
+                CurrentMember.Data.HasThisInCodeBlock = true;
+            }
+        }
         public override void ExitAccessMember([NotNull] XP.AccessMemberContext context)
         {
-            if (context.Op.Type == XP.COLONCOLON)
+            if (context.Op.Type == XP.COLONCOLON && context.Expr == null)
             {
                 context.Put(MakeSimpleMemberAccess(
                     GenerateSelf(),
@@ -7683,9 +7721,17 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
             else
             {
                 // When AllowDotForInstanceMembers
-                if (context.Op.Type == XP.COLON || _options.HasOption(CompilerOption.AllowDotForInstanceMembers, context, PragmaOptions))
+                if (context.Op.Type == XP.DOTCOLON ||
+                    context.Op.Type == XP.COLON ||
+                    _options.HasOption(CompilerOption.AllowDotForInstanceMembers, context, PragmaOptions))
                 {
-                    context.Put(MakeSimpleMemberAccess(context.Expr.Get<ExpressionSyntax>(), context.Name.Get<SimpleNameSyntax>()));
+                    var left = context.Expr.Get<ExpressionSyntax>();
+                    var cb = GetCodeBlock(context);
+                    if (cb != null && context.HasThisReference)
+                    {
+                        left = GenerateSimpleName(XSharpSpecialNames.This);
+                    }
+                    context.Put(MakeSimpleMemberAccess(left, context.Name.Get<SimpleNameSyntax>()));
                 }
                 else if (context.Expr.Get<ExpressionSyntax>() is NameSyntax)
                 {
@@ -7701,7 +7747,16 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
             }
             return;
         }
-
+        protected virtual void ImplementSpecialLocals(XP.IMemberWithBodyContext context, SyntaxListBuilder<StatementSyntax> stmts)
+        {
+            if (context.Data.HasThisInCodeBlock)
+            {
+                // Add local Xs$This and assign SELF
+                var thisdecl = GenerateLocalDecl(XSharpSpecialNames.This, ObjectType, GenerateSelf());
+                thisdecl.XGenerated = true;
+                stmts.Add(thisdecl);
+            }
+        }
         public override void ExitAccessMemberWith([NotNull] XP.AccessMemberWithContext context)
         {
             var expr = context.Right.Get<ExpressionSyntax>();
@@ -9607,7 +9662,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
                     context.Put(litExpr.WithAdditionalDiagnostics(diag));
                 }
             }
-            // __VO1__ ... __VO17__, __XPP1__, __FOX1__, __FOX2__ are translated by the preprocessor to TRUE const
+            // __VO1__ ... __VO17__, __XPP1__, __FOX1__, __FOX2__, __FOX3__  are translated by the preprocessor to TRUE const
             // determine real value now
             var text = context.Token.Text;
             if (context.Token.Type == XP.TRUE_CONST && text.Length > 4 && text.StartsWith("__") && text.EndsWith("__"))
@@ -10591,6 +10646,7 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
                     transform.Entities.Push(this.CurrentEntity);
                     walker.Walk(transform, tree);
                     walker.Walk(new XSharpClearSequences(), tree);
+                    this.MergeParseResults(transform);
 
                 }
                 catch (Exception e)
@@ -10605,6 +10661,13 @@ namespace Microsoft.CodeAnalysis.CSharp.Syntax.InternalSyntax
             return new XSharpTreeTransformationCore(parser, _options, _pool, _syntaxFactory, _fileName);
         }
 
+        protected virtual void MergeParseResults(XSharpTreeTransformationCore subparser)
+        {
+            if (subparser.ParseErrors.Count > 0)
+            {
+                this.ParseErrors.AddRange(subparser.ParseErrors);
+            }
+        }
         #endregion
 
     }

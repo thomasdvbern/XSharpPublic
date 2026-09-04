@@ -32,7 +32,7 @@ class SqlDbCommand inherit SqlDbHandleObject implements IDisposable
     /// <summary>The DBMS Provider class.</summary>
     property Provider       as ISqlDbProvider get iif(Connection == null, null, Connection:Provider)
     /// <summary>The text of the Command object.</summary>
-    property CommandText    as string get DbCommand:CommandText set DbCommand:CommandText := value
+    property CommandText    as string get iif(DbCommand == null, "", DbCommand:CommandText) set DbCommand:CommandText := value
 
 #endregion
 
@@ -103,6 +103,7 @@ class SqlDbCommand inherit SqlDbHandleObject implements IDisposable
     /// <seealso cref="SqlDbConnection.LastException"/>
     method GetSchemaTable() as DataTable
         try
+            self:Connection:ForceOpen()
             if ! SELF:_TryBindParameters()
                 return null
             endif
@@ -150,6 +151,7 @@ class SqlDbCommand inherit SqlDbHandleObject implements IDisposable
     /// <seealso cref="SqlDbConnection.LastException"/>
     method ExecuteScalar(cTable := "" as string) as object
         try
+            self:Connection:ForceOpen()
             if String.IsNullOrEmpty(cTable)
                 cTable := SELF:Name
             endif
@@ -176,6 +178,7 @@ class SqlDbCommand inherit SqlDbHandleObject implements IDisposable
     /// <seealso cref="SqlDbConnection.LastException"/>
     method ExecuteReader(cTable := "" as string) as DbDataReader
         try
+            self:Connection:ForceOpen()
             if String.IsNullOrEmpty(cTable)
                 cTable := SELF:Name
             endif
@@ -202,6 +205,7 @@ class SqlDbCommand inherit SqlDbHandleObject implements IDisposable
     /// <seealso cref="SqlDbConnection.LastException"/>
     method ExecuteNonQuery(cTable := "" as string) as LOGIC
         try
+            self:Connection:ForceOpen()
             if String.IsNullOrEmpty(cTable)
                 cTable := SELF:Name
             endif

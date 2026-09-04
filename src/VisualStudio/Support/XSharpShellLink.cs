@@ -33,21 +33,20 @@ namespace XSharp.Support
     {
         static ILogger Logger => XSettings.Logger;
 
-        internal XSharpShellLink()
+        /// <summary>
+        /// Subscribe to the shell events. Must be awaited and never waited on: we are called from
+        /// the InitializeAsync() of our packages, where blocking while waiting for the UI thread
+        /// deadlocks the IDE. See the remarks on Logger.InitializeAsync().
+        /// </summary>
+        internal async System.Threading.Tasks.Task InitializeAsync()
         {
-            ThreadHelper.JoinableTaskFactory.Run(async delegate
-            {
-                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                // Logger may not be fully initialized yet, so guard against null
-                Logger?.Information("Initialize XSharpShellLink");
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            // Logger may not be fully initialized yet, so guard against null
+            Logger?.Information("Initialize XSharpShellLink");
 
 
 
-#if LIBRARYMANAGER
 
-                VS.Events.SolutionEvents.OnAfterLoadProject += SolutionEvents_OnAfterLoadProject;
-                VS.Events.SolutionEvents.OnBeforeUnloadProject += SolutionEvents_OnBeforeUnloadProject;
-#endif
                 VS.Events.BuildEvents.SolutionBuildStarted += BuildEvents_SolutionBuildStarted;
                 VS.Events.BuildEvents.SolutionBuildDone += BuildEvents_SolutionBuildDone;
                 VS.Events.BuildEvents.SolutionBuildCancelled += BuildEvents_SolutionBuildCancelled;
@@ -92,43 +91,8 @@ namespace XSharp.Support
 
 
                 Logger?.Information("Initialized XSharpShellLink");
-            });
-
-
-        }
-#if LIBRARYMANAGER
-        private void SolutionEvents_OnBeforeUnloadProject(Project project)
-        {
-
-            IXSharpLibraryManager libraryManager = VS.GetRequiredService<IXSharpLibraryManager, IXSharpLibraryManager>();
-            if (libraryManager != null)
-            {
-                project.GetItemInfo(out var hier, out var id, out var parent);
-                libraryManager.UnregisterHierarchy(hier);
-            }
-
         }
 
-        private void SolutionEvents_OnAfterLoadProject(Project project)
-        {
-
-            if (!IsXSharpProject(project.FullPath))
-                return;
-            var framework = "";
-            IXSharpLibraryManager libraryManager = VS.GetRequiredService<IXSharpLibraryManager, IXSharpLibraryManager>();
-            if (libraryManager != null)
-            {
-                project.GetItemInfo(out var hier, out var id, out var parent);
-                var prj = XSolution.FindProject(project.FullPath, framework);
-                if (prj != null)
-                {
-                    libraryManager.RegisterHierarchy(hier, prj, prj.ProjectNode);
-                }
-
-            }
-
-        }
-#endif
         private List<Project> GetProjects(SolutionItem parent)
         {
             var result = new List<Project>();
@@ -247,6 +211,8 @@ namespace XSharp.Support
 
         public bool IsDocumentOpen(string file)
         {
+            if (string.IsNullOrEmpty(file))
+                return false;
             return ThreadHelper.JoinableTaskFactory.Run(async delegate
             {
                 return await VS.Documents.IsOpenAsync(file);
@@ -342,7 +308,7 @@ namespace XSharp.Support
         private void BuildEvents_ProjectConfigurationChanged(Project project)
         {
             Logger.SingleLine();
-            Logger.Information("Project Configuration changed: " + project.Name);
+            Logger.Information("Project Configuration changed: " + project?.Name);
         }
 
         private void BuildEvents_SolutionConfigurationChanged()
